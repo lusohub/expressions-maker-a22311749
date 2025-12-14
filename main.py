@@ -6,7 +6,6 @@ import datetime
 import requests
 import unicodedata
 from google.cloud import pubsub_v1
-import redis
 
 def _remove_accents(text):
     """Remove acentos de uma string"""
@@ -73,23 +72,6 @@ def callback(message):
     print(f"{'='*60}")
     
     try:
-        # conectar ao redis (config via env)
-        redis_client = redis.Redis(
-            host=os.environ.get("REDIS_HOST", "localhost"),
-            port=int(os.environ.get("REDIS_PORT", "6379")),
-            db=int(os.environ.get("REDIS_DB", "0")),
-            decode_responses=True,
-        )
-    except Exception:
-        redis_client = None
-
-    try:
-        # deduplicação simples: se já processado, ack e sair
-        msg_key = f"processed:{message.message_id}"
-        if redis_client and redis_client.get(msg_key):
-            print(f"⚠ Mensagem {message.message_id} já processada (cache). ACK.")
-            message.ack()
-            return
         # decodificar dados
         raw = message.data
         client_data = {}
@@ -137,13 +119,6 @@ def callback(message):
             else:
                 print(f"✗ Falha ao processar cliente: {client_data.get('name')}")
         
-        # depois de processar com sucesso marca no cache por 1h
-        if redis_client:
-            try:
-                redis_client.setex(msg_key, 3600, "1")
-            except Exception:
-                pass
-
         message.ack()
         print(f"{'='*60}\n")
         
