@@ -26,46 +26,24 @@ def _safe_filename(name):
     name = re.sub(r"[^A-Za-z0-9\-_\s]", "_", name)
     name = name.replace(" ", "_")[:50]  # limitar tamanho
     ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    return f"cliente_{name}_{ts}.txt"
+    return f"cliente_{name}_{ts}.json"
 
 def _format_client_text(client):
-    """Formata os dados do cliente em texto legível"""
+    """Formata os dados do cliente em JSON"""
     now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     
-    lines = [
-        "=" * 50,
-        "REGISTO DE CLIENTE",
-        "=" * 50,
-        f"Data de criação: {now}",
-        "",
-        "INFORMAÇÃO DO CLIENTE",
-        "-" * 50,
-    ]
+    client_json = {
+        "name": client.get("name"),
+        "email": client.get("email"),
+        "phone": client.get("phone"),
+        "company": client.get("company"),
+        "address": client.get("address"),
+        "preferred_contact": client.get("preferred_contact"),
+        "notes": client.get("notes"),
+        "created_at": now
+    }
     
-    fields = [
-        ("Nome", client.get("name")),
-        ("Email", client.get("email")),
-        ("Telefone", client.get("phone")),
-        ("Empresa", client.get("company")),
-        ("Morada", client.get("address")),
-        ("Contacto Preferido", client.get("preferred_contact")),
-        ("Notas", client.get("notes")),
-    ]
-    
-    for label, value in fields:
-        if value:
-            lines.append(f"{label}: {value}")
-        else:
-            lines.append(f"{label}: (não fornecido)")
-    
-    lines.extend([
-        "",
-        "=" * 50,
-        "Fim do registo",
-        "=" * 50
-    ])
-    
-    return "\n".join(lines)
+    return json.dumps(client_json, indent=2, ensure_ascii=False)
 
 def callback(message):
     """Processa mensagens do Pub/Sub"""
