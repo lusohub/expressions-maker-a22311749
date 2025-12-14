@@ -4,7 +4,17 @@ import io
 import re
 import datetime
 import requests
+import unicodedata
 from google.cloud import pubsub_v1
+
+def _remove_accents(text):
+    """Remove acentos de uma string"""
+    if not text:
+        return text
+    # Normaliza para NFD (separa caracteres base dos diacríticos)
+    nfd = unicodedata.normalize('NFD', text)
+    # Remove os diacríticos (categoria Mn = Nonspacing Mark)
+    return ''.join(char for char in nfd if unicodedata.category(char) != 'Mn')
 
 def send_text_file_to_discord(webhook_url, text, filename="client.txt"):
     """Envia ficheiro de texto para Discord via webhook"""
@@ -23,23 +33,33 @@ def send_text_file_to_discord(webhook_url, text, filename="client.txt"):
 def _safe_filename(name):
     """Gera um nome de ficheiro seguro com timestamp"""
     name = (name or "cliente").strip()
+    # Remove acentos antes de criar o nome do ficheiro
+    name = _remove_accents(name)
     name = re.sub(r"[^A-Za-z0-9\-_\s]", "_", name)
     name = name.replace(" ", "_")[:50]  # limitar tamanho
     ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    return f"cliente_{name}_{ts}.json"
+    return f"cliente_{name}_{ts}.txt"
 
 def _format_client_text(client):
     """Formata os dados do cliente em JSON"""
     now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     
+    # Cria uma cópia do cliente com acentos removidos
+    client_normalized = {}
+    for key, value in client.items():
+        if isinstance(value, str):
+            client_normalized[key] = _remove_accents(value)
+        else:
+            client_normalized[key] = value
+    
     client_json = {
-        "name": client.get("name"),
-        "email": client.get("email"),
-        "phone": client.get("phone"),
-        "company": client.get("company"),
-        "address": client.get("address"),
-        "preferred_contact": client.get("preferred_contact"),
-        "notes": client.get("notes"),
+        "name": client_normalized.get("name"),
+        "email": client_normalized.get("email"),
+        "phone": client_normalized.get("phone"),
+        "company": client_normalized.get("company"),
+        "address": client_normalized.get("address"),
+        "preferred_contact": client_normalized.get("preferred_contact"),
+        "notes": client_normalized.get("notes"),
         "created_at": now
     }
     
