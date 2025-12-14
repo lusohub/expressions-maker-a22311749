@@ -7,6 +7,33 @@ import requests
 import unicodedata
 from google.cloud import pubsub_v1
 
+# ===== Novo: suporte opcional a Redis =====
+try:
+    import redis
+except Exception:
+    redis = None
+
+def _init_redis():
+    """Inicializa cliente Redis opcional a partir de REDIS_URL (pode ser redis://...)."""
+    url = os.environ.get("REDIS_URL")
+    if not url or redis is None:
+        if not url:
+            print("⚠ REDIS_URL não configurado, cache desativado")
+        else:
+            print("⚠ Biblioteca 'redis' não disponível, cache desativado")
+        return None
+    try:
+        client = redis.Redis.from_url(url, decode_responses=True)
+        # testar ligação simples
+        client.ping()
+        print("✓ Redis ligado:", url)
+        return client
+    except Exception as e:
+        print(f"✗ Falha ao ligar ao Redis ({e}), cache desativado")
+        return None
+
+redis_client = _init_redis()
+
 def _remove_accents(text):
     """Remove acentos de uma string"""
     if not text:
@@ -65,6 +92,13 @@ def _format_client_text(client):
     
     return json.dumps(client_json, indent=2, ensure_ascii=False)
 
+def _client_cache_key(client):
+    """Gera chave de cache baseada em email/phone/nome (normalizado)."""
+    identifier = client.get("email") or client.get("phone") or client.get("name") or "unknown"
+    identifier = _remove_accents(str(identifier)).lower()
+    identifier = re.sub(r"[^a-z0-9_]", "_", identifier)[:64]
+    return f"client_cache:{identifier}"
+
 def callback(message):
     """Processa mensagens do Pub/Sub"""
     print(f"\n{'='*60}")
@@ -106,18 +140,42 @@ def callback(message):
         print(f"Email: {client_data.get('email') or '(não fornecido)'}")
         print(f"Telefone: {client_data.get('phone') or '(não fornecido)'}")
         
-        # enviar para Discord
+        # enviar para Discord (com cache Redis opcional)
         webhook_url = os.environ.get("DISCORD_URL")
         if not webhook_url:
             print("⚠ DISCORD_URL não configurado, a ignorar envio")
         else:
             filename = _safe_filename(client_data.get("name"))
             text = _format_client_text(client_data)
-            
-            if send_text_file_to_discord(webhook_url, text, filename=filename):
-                print(f"✓ Cliente processado com sucesso: {client_data.get('name')}")
+
+            # Verificar cache
+            if redis_client:
+                try:
+                    key = _client_cache_key(client_data)
+                    if redis_client.get(key):
+                        print(f"✓ Cliente já em cache ({key}), a ignorar envio para Discord")
+                    else:
+                        if send_text_file_to_discord(webhook_url, text, filename=filename):
+                            # TTL configurável via env REDIS_TTL (segundos), padrão 3600s
+                            ttl = int(os.environ.get("REDIS_TTL", "3600"))
+                            try:
+                                redis_client.set(key, "1", ex=ttl)
+                                print(f"✓ Cache gravado: {key} (TTL={ttl}s)")
+                            except Exception as e:
+                                print(f"⚠ Não foi possível gravar cache: {e}")
+                        else:
+                            print(f"✗ Falha ao processar cliente: {client_data.get('name')}")
+                except Exception as e:
+                    print(f"⚠ Erro durante operações de cache: {e}")
+                    # fallback: tentar enviar sem cache
+                    if send_text_file_to_discord(webhook_url, text, filename=filename):
+                        print(f"✓ Cliente processado (sem cache): {client_data.get('name')}")
             else:
-                print(f"✗ Falha ao processar cliente: {client_data.get('name')}")
+                # Sem Redis -> comportamento original
+                if send_text_file_to_discord(webhook_url, text, filename=filename):
+                    print(f"✓ Cliente processado com sucesso: {client_data.get('name')}")
+                else:
+                    print(f"✗ Falha ao processar cliente: {client_data.get('name')}")
         
         message.ack()
         print(f"{'='*60}\n")
