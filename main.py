@@ -44,17 +44,15 @@ def _remove_accents(text):
     return ''.join(char for char in nfd if unicodedata.category(char) != 'Mn')
 
 def send_text_file_to_discord(webhook_url, text, filename="client.txt"):
-    """Envia ficheiro de texto para Discord via webhook"""
+    """Envia JSON como mensagem para Discord via webhook (sem ficheiro)."""
     try:
-        file_bytes = io.BytesIO(text.encode("utf-8"))
-        file_bytes.seek(0)
-        files = {"file": (filename, file_bytes, "text/plain")}
-        resp = requests.post(webhook_url, files=files, timeout=15)
+        # Envia o JSON no corpo como content (sem anexos)
+        resp = requests.post(webhook_url, json={"content": text}, timeout=15)
         resp.raise_for_status()
-        print(f"✓ Ficheiro enviado para Discord: {filename} ({resp.status_code})")
+        print(f"✓ Mensagem JSON enviada para Discord ({resp.status_code})")
         return True
     except Exception as e:
-        print(f"✗ Erro ao enviar ficheiro para Discord: {e}")
+        print(f"✗ Erro ao enviar mensagem para Discord: {e}")
         return False
 
 def _safe_filename(name):
